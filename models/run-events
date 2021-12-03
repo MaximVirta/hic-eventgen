@@ -245,7 +245,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
     #        for dset in f.values():
     #            return dset.attrs["bmax"];
 
-    def _initial_conditions(nevents=10, initial_file='initial.hdf', bmax=-1):
+    def _initial_conditions(nevents=10, initial_file='initial.hdf'):
         """
         Run trento and yield initial condition arrays.
 
@@ -258,7 +258,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
         run_cmd(
             'trento',
             '--number-events {}'.format(nevents),
-            '--b-max {}'.format(bmax),
+            #'--b-max {}'.format(bmax),
             '--grid-step {} --grid-max {}'.format(grid_step, grid_max_target),
             '--output', initial_file,
             '--nucleon-width {}'.format(args.nucleon_width),
@@ -279,7 +279,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
 
                 yield (ic,dset.attrs['b'])
 
-    bmax1 = 13.0; #12.787304324885753; #get_initial_conditions_bmax();
+    #bmax1 = 12.09; #get_initial_conditions_bmax();
     #logging.info('Determined bmax = %.5f * 0.6 = %.5f',bmax1,0.60*bmax1);
     #hack: run one trento event to determine the max impact parameter.
     #This is to limit events to 0-60% centrality range (0.60*bmax1)
@@ -288,9 +288,9 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
         # if nevents was specified, generate that number of initial conditions
         # otherwise generate indefinitely
         initial_conditions,bs = zip(*(
-            chain.from_iterable(_initial_conditions(bmax=bmax1) for _ in repeat(None))
+            chain.from_iterable(_initial_conditions() for _ in repeat(None))
             if args.nevents is None else
-            _initial_conditions(args.nevents,bmax=bmax1)
+            _initial_conditions(args.nevents)
             #chain.from_iterable(_initial_conditions(bmax=0.60*bmax1) for _ in repeat(None))
             #if args.nevents is None else
             #_initial_conditions(args.nevents,bmax=0.60*bmax1)
@@ -411,18 +411,18 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
 
     # results "array" (one element)
     # to be overwritten for each event
-    #results = np.empty((), dtype=[
-    #    ('initial_entropy', float_t),
-    #    ('nsamples', int_t),
-    #    ('dNch_deta', float_t),
-    #    ('dET_deta', float_t),
-    #    ('dN_dy', [(s, float_t) for (s, _) in species]),
-    #    ('mean_pT', [(s, float_t) for (s, _) in species]),
-    #    ('pT_fluct', [('N', int_t), ('sum_pT', float_t), ('sum_pTsq', float_t)]),
-    #    ('flow', [('N', int_t), ('Qn', complex_t, 8)]),
-    #    ('b', float_t),
-    #    ('bmax', float_t)
-    #])
+    results = np.empty((), dtype=[
+        ('initial_entropy', float_t),
+        ('nsamples', int_t),
+        ('dNch_deta', float_t),
+        ('dET_deta', float_t),
+        ('dN_dy', [(s, float_t) for (s, _) in species]),
+        ('mean_pT', [(s, float_t) for (s, _) in species]),
+        ('pT_fluct', [('N', int_t), ('sum_pT', float_t), ('sum_pTsq', float_t)]),
+        ('flow', [('N', int_t), ('Qn', complex_t, 8)]),
+        ('b', float_t),
+        #('bmax', float_t)
+    ])
 
     # UrQMD raw particle format
     parts_dtype = [
@@ -443,10 +443,10 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
         and save observables to `results`.
 
         """
-        #results.fill(0)
-        #results['b'] = b;
+        results.fill(0)
+        results['b'] = b;
         #results['bmax'] = bmax1;
-        #results['initial_entropy'] = ic.sum() * grid_step**2
+        results['initial_entropy'] = ic.sum() * grid_step**2
 
         assert all(n == grid_n for n in ic.shape)
 
@@ -469,7 +469,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
 
         minsamples, maxsamples = 10, 1000  # reasonable range for nsamples
         #minsamples, maxsamples = 10, 1000  # reasonable range for nsamples
-        #minparts = 10**5  # min number of particles to sample
+        minparts = 10**5  # min number of particles to sample
         nparts = 0  # for tracking total number of sampled particles
 
         logging.info('sampling surface with frzout')
@@ -485,8 +485,8 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
                 print('#', parts.size, file=f)
                 for p in parts:
                     print(p['ID'], *p['x'], *p['p'], file=f)
-                #if nparts >= minparts and nsamples >= minsamples:
-                if nsamples >= minsamples:
+                if nparts >= minparts and nsamples >= minsamples:
+                #if nsamples >= minsamples:
                     break
 
         logging.info('produced %d particles in %d samples', nparts, nsamples)
@@ -498,7 +498,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
         # (up to ~a few hundred MiB for ultracentral collisions)
         del surface
 
-        #results['nsamples'] = nsamples
+        results['nsamples'] = nsamples
 
         # hadronic afterburner
         run_cmd('afterburner particles_in.dat particles_out.dat')
@@ -534,46 +534,46 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
 
             #logging.info("b = %.4f",b);
             pdset.attrs.create('b',b,dtype=float_t);
-            pdset.attrs.create('bmax',bmax1,dtype=float_t);
+            #pdset.attrs.create('bmax',bmax1,dtype=float_t);
             pdset.attrs.create('nsamples',nsamples,dtype=int_t);
             pdset.attrs.create("dNch_deta", \
                 np.count_nonzero((parts['charge'] != 0) & (np.fabs(parts['eta']) < .5)) \
                 / nsamples,dtype=float_t);
 
-        #logging.info('computing observables')
-        #charged = (parts['charge'] != 0)
-        #abs_eta = np.fabs(parts['eta'])
+        logging.info('computing observables')
+        charged = (parts['charge'] != 0)
+        abs_eta = np.fabs(parts['eta'])
 
-        #results['dNch_deta'] = \
-        #    np.count_nonzero(charged & (abs_eta < .5)) / nsamples
+        results['dNch_deta'] = \
+            np.count_nonzero(charged & (abs_eta < .5)) / nsamples
 
-        #ET_eta = .6
-        #results['dET_deta'] = \
-        #    parts['ET'][abs_eta < ET_eta].sum() / (2*ET_eta) / nsamples
+        ET_eta = .6
+        results['dET_deta'] = \
+            parts['ET'][abs_eta < ET_eta].sum() / (2*ET_eta) / nsamples
 
-        #abs_ID = np.abs(parts['ID'])
-        #midrapidity = (np.fabs(parts['y']) < .5)
+        abs_ID = np.abs(parts['ID'])
+        midrapidity = (np.fabs(parts['y']) < .5)
 
-        #pT = parts['pT']
-        #phi = parts['phi']
+        pT = parts['pT']
+        phi = parts['phi']
 
-        #for name, i in species:
-        #    cut = (abs_ID == i) & midrapidity
-        #    N = np.count_nonzero(cut)
-        #    results['dN_dy'][name] = N / nsamples
-        #    results['mean_pT'][name] = (0. if N == 0 else pT[cut].mean())
+        for name, i in species:
+            cut = (abs_ID == i) & midrapidity
+            N = np.count_nonzero(cut)
+            results['dN_dy'][name] = N / nsamples
+            results['mean_pT'][name] = (0. if N == 0 else pT[cut].mean())
 
-        #pT_alice = pT[charged & (abs_eta < .8) & (.15 < pT) & (pT < 2.)]
-        #results['pT_fluct']['N'] = pT_alice.size
-        #results['pT_fluct']['sum_pT'] = pT_alice.sum()
-        #results['pT_fluct']['sum_pTsq'] = np.inner(pT_alice, pT_alice)
+        pT_alice = pT[charged & (abs_eta < .8) & (.15 < pT) & (pT < 2.)]
+        results['pT_fluct']['N'] = pT_alice.size
+        results['pT_fluct']['sum_pT'] = pT_alice.sum()
+        results['pT_fluct']['sum_pTsq'] = np.inner(pT_alice, pT_alice)
 
-        #phi_alice = phi[charged & (abs_eta < .8) & (.2 < pT) & (pT < 5.)]
-        #results['flow']['N'] = phi_alice.size
-        #results['flow']['Qn'] = [
-        #    np.exp(1j*n*phi_alice).sum()
-        #    for n in range(1, results.dtype['flow']['Qn'].shape[0] + 1)
-        #]
+        phi_alice = phi[charged & (abs_eta < .8) & (.2 < pT) & (pT < 5.)]
+        results['flow']['N'] = phi_alice.size
+        results['flow']['Qn'] = [
+            np.exp(1j*n*phi_alice).sum()
+            for n in range(1, results.dtype['flow']['Qn'].shape[0] + 1)
+        ]
 
     nfail = 0
 
@@ -598,7 +598,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
             logging.warning('continuing to next event')
             continue
 
-        #results_file.write(results.tobytes())
+        results_file.write(results.tobytes())
         logging.info('event %d completed successfully', n)
 
     # end of events: if running with a checkpoint, delete the file unless this
@@ -682,9 +682,9 @@ def main():
     def h5py_file():
         yield h5py.File(args.particles, 'w') if args.particles else None
 
-            #open(args.results, filemode + 'b',
-            #     buffering=args.buffering) as results_file, \
     with \
+            open(args.results, filemode + 'b',
+                 buffering=args.buffering) as results_file, \
             h5py_file() as particles_file, \
             tempfile.TemporaryDirectory(
                 prefix='hic-', dir=args.tmpdir) as workdir:
@@ -692,7 +692,7 @@ def main():
         logging.info('working directory: %s', workdir)
 
         try:
-            status = run_events(args, None, particles_file, checkpoint_ic)
+            status = run_events(args, results_file, particles_file, checkpoint_ic)
         except KeyboardInterrupt:
             # after catching the initial SIGTERM or interrupt, ignore them
             # during shutdown -- this ensures everything will exit gracefully

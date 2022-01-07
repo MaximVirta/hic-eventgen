@@ -277,7 +277,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
                         pickle.dump((args, ic), cf, pickle.HIGHEST_PROTOCOL)
                     logging.info('wrote checkpoint file %s', args.checkpoint)
 
-                yield (ic,dset.attrs['b'])
+                yield (ic,dset.attrs['b'],(dset.attrs['e2'],dset.attrs['e3']))
 
     bmax1 = 13.0; #12.787304324885753; #get_initial_conditions_bmax();
     #logging.info('Determined bmax = %.5f * 0.6 = %.5f',bmax1,0.60*bmax1);
@@ -287,7 +287,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
     if checkpoint_ic is None:
         # if nevents was specified, generate that number of initial conditions
         # otherwise generate indefinitely
-        initial_conditions,bs = zip(*(
+        initial_conditions,bs,eccs = zip(*(
             chain.from_iterable(_initial_conditions(bmax=bmax1) for _ in repeat(None))
             if args.nevents is None else
             _initial_conditions(args.nevents,bmax=bmax1)
@@ -437,7 +437,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
         ('eta', float)
     ]
 
-    def run_single_event(ic, b, event_number):
+    def run_single_event(ic, b, ecc, event_number):
         """
         Run the initial condition event contained in HDF5 dataset object `ic`
         and save observables to `results`.
@@ -534,6 +534,8 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
 
             #logging.info("b = %.4f",b);
             pdset.attrs.create('b',b,dtype=float_t);
+            pdset.attrs.create('e2',ecc[0],dtype=float_t);
+            pdset.attrs.create('e3',ecc[1],dtype=float_t);
             pdset.attrs.create('bmax',bmax1,dtype=float_t);
             pdset.attrs.create('nsamples',nsamples,dtype=int_t);
             pdset.attrs.create("dNch_deta", \
@@ -578,11 +580,11 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
     nfail = 0
 
     # run each initial condition event and save results to file
-    for n, (ic,b) in enumerate(zip(initial_conditions,bs), start=1):
+    for n, (ic,b,ecc) in enumerate(zip(initial_conditions,bs,eccs), start=1):
         logging.info('starting event %d', n)
 
         try:
-            run_single_event(ic, b, n)
+            run_single_event(ic, b, ecc, n)
         except StopEvent as e:
             if particles_file is not None:
                 particles_file.create_dataset(

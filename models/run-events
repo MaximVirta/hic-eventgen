@@ -485,8 +485,8 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
                 print('#', parts.size, file=f)
                 for p in parts:
                     print(p['ID'], *p['x'], *p['p'], file=f)
-                if nparts >= minparts and nsamples >= minsamples:
-                #if nsamples >= minsamples:
+                #if nparts >= minparts and nsamples >= minsamples:
+                if nsamples >= minsamples:
                     break
 
         logging.info('produced %d particles in %d samples', nparts, nsamples)

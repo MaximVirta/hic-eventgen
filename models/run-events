@@ -214,9 +214,11 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
 
     """
     # set the grid step size proportionally to the nucleon width
-    grid_step = .15*args.nucleon_width
+    # grid_step = .15*args.nucleon_width
+    grid_step = 0.08
     # the "target" grid max: the grid shall be at least as large as the target
-    grid_max_target = 15
+    # grid_max_target = 15
+    grid_max_target = 16
     # next two lines set the number of grid cells and actual grid max,
     # which will be >= the target (same algorithm as trento)
     grid_n = math.ceil(2*grid_max_target/grid_step)

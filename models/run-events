@@ -144,6 +144,15 @@ parser.add_argument(
     help='results file buffer size in bytes (default: no buffering)'
 )
 parser.add_argument(
+    '--centDet', action="store_true",
+    help='flag to turn on centrality determination (default: false)'
+)
+parser.add_argument(
+    '--bmax', type=float, default=13.0, metavar='FLOAT',
+    help='b-max value for trento to limit centrality [fm] (default: %(default)s fm)'
+)
+
+parser.add_argument(
     '--nevents', type=int, metavar='INT',
     help='number of events to run (default: run until interrupted)'
 )
@@ -280,7 +289,10 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
 
                 yield (ic,dset.attrs['b'],(dset.attrs['e2'],dset.attrs['e3']))
 
-    bmax1 = 13.0; #12.787304324885753; #get_initial_conditions_bmax();
+    if args.centDet:
+        bmax1 = -1.
+    else:
+        bmax1 = args.bmax; #12.787304324885753; #get_initial_conditions_bmax();
     #logging.info('Determined bmax = %.5f * 0.6 = %.5f',bmax1,0.60*bmax1);
     #hack: run one trento event to determine the max impact parameter.
     #This is to limit events to 0-60% centrality range (0.60*bmax1)
@@ -412,18 +424,20 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
 
     # results "array" (one element)
     # to be overwritten for each event
-    #results = np.empty((), dtype=[
-    #    ('initial_entropy', float_t),
-    #    ('nsamples', int_t),
-    #    ('dNch_deta', float_t),
-    #    ('dET_deta', float_t),
-    #    ('dN_dy', [(s, float_t) for (s, _) in species]),
-    #    ('mean_pT', [(s, float_t) for (s, _) in species]),
-    #    ('pT_fluct', [('N', int_t), ('sum_pT', float_t), ('sum_pTsq', float_t)]),
-    #    ('flow', [('N', int_t), ('Qn', complex_t, 8)]),
-    #    ('b', float_t),
-    #    ('bmax', float_t)
-    #])
+    if not args.centDet:
+        results = None;
+    else:
+        results = np.empty((), dtype=[
+           ('initial_entropy', float_t),
+           ('nsamples', int_t),
+           ('dNch_deta', float_t),
+           ('dET_deta', float_t),
+           ('dN_dy', [(s, float_t) for (s, _) in species]),
+           ('mean_pT', [(s, float_t) for (s, _) in species]),
+           ('pT_fluct', [('N', int_t), ('sum_pT', float_t), ('sum_pTsq', float_t)]),
+           ('flow', [('N', int_t), ('Qn', complex_t, 8)]),
+           ('b', float_t)
+        ])
 
     # UrQMD raw particle format
     parts_dtype = [
@@ -444,10 +458,10 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
         and save observables to `results`.
 
         """
-        #results.fill(0)
-        #results['b'] = b;
-        #results['bmax'] = bmax1;
-        #results['initial_entropy'] = ic.sum() * grid_step**2
+        if args.centDet:
+            results.fill(0)
+            results['b'] = b;
+            results['initial_entropy'] = ic.sum() * grid_step**2
 
         assert all(n == grid_n for n in ic.shape)
 
@@ -499,7 +513,8 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
         # (up to ~a few hundred MiB for ultracentral collisions)
         del surface
 
-        #results['nsamples'] = nsamples
+        if args.centDet:
+            results['nsamples'] = nsamples
 
         # hadronic afterburner
         run_cmd('afterburner particles_in.dat particles_out.dat')
@@ -537,7 +552,8 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
             pdset.attrs.create('b',b,dtype=float_t);
             pdset.attrs.create('e2',ecc[0],dtype=float_t);
             pdset.attrs.create('e3',ecc[1],dtype=float_t);
-            pdset.attrs.create('bmax',bmax1,dtype=float_t);
+            if not args.centDet:
+                pdset.attrs.create('bmax',bmax1,dtype=float_t);
             pdset.attrs.create('nsamples',nsamples,dtype=int_t);
             pdset.attrs.create("dNch_deta", \
                 np.count_nonzero((parts['charge'] != 0) & (np.fabs(parts['eta']) < .5)) \
@@ -546,40 +562,41 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
                 np.count_nonzero((parts['charge'] != 0) & (np.fabs(parts['eta']) > 1.) & (np.fabs(parts['eta']) < 2.)) \
                 / nsamples,dtype=float_t);
 
-        #logging.info('computing observables')
-        #charged = (parts['charge'] != 0)
-        #abs_eta = np.fabs(parts['eta'])
+        if args.centDet:
+            logging.info('computing observables')
+            charged = (parts['charge'] != 0)
+            abs_eta = np.fabs(parts['eta'])
 
-        #results['dNch_deta'] = \
-        #    np.count_nonzero(charged & (abs_eta < .5)) / nsamples
+            results['dNch_deta'] = \
+               np.count_nonzero(charged & (abs_eta < .5)) / nsamples
 
-        #ET_eta = .6
-        #results['dET_deta'] = \
-        #    parts['ET'][abs_eta < ET_eta].sum() / (2*ET_eta) / nsamples
+            ET_eta = .6
+            results['dET_deta'] = \
+               parts['ET'][abs_eta < ET_eta].sum() / (2*ET_eta) / nsamples
 
-        #abs_ID = np.abs(parts['ID'])
-        #midrapidity = (np.fabs(parts['y']) < .5)
+            abs_ID = np.abs(parts['ID'])
+            midrapidity = (np.fabs(parts['y']) < .5)
 
-        #pT = parts['pT']
-        #phi = parts['phi']
+            pT = parts['pT']
+            phi = parts['phi']
 
-        #for name, i in species:
-        #    cut = (abs_ID == i) & midrapidity
-        #    N = np.count_nonzero(cut)
-        #    results['dN_dy'][name] = N / nsamples
-        #    results['mean_pT'][name] = (0. if N == 0 else pT[cut].mean())
+            for name, i in species:
+               cut = (abs_ID == i) & midrapidity
+               N = np.count_nonzero(cut)
+               results['dN_dy'][name] = N / nsamples
+               results['mean_pT'][name] = (0. if N == 0 else pT[cut].mean())
 
-        #pT_alice = pT[charged & (abs_eta < .8) & (.15 < pT) & (pT < 2.)]
-        #results['pT_fluct']['N'] = pT_alice.size
-        #results['pT_fluct']['sum_pT'] = pT_alice.sum()
-        #results['pT_fluct']['sum_pTsq'] = np.inner(pT_alice, pT_alice)
+            pT_alice = pT[charged & (abs_eta < .8) & (.15 < pT) & (pT < 2.)]
+            results['pT_fluct']['N'] = pT_alice.size
+            results['pT_fluct']['sum_pT'] = pT_alice.sum()
+            results['pT_fluct']['sum_pTsq'] = np.inner(pT_alice, pT_alice)
 
-        #phi_alice = phi[charged & (abs_eta < .8) & (.2 < pT) & (pT < 5.)]
-        #results['flow']['N'] = phi_alice.size
-        #results['flow']['Qn'] = [
-        #    np.exp(1j*n*phi_alice).sum()
-        #    for n in range(1, results.dtype['flow']['Qn'].shape[0] + 1)
-        #]
+            phi_alice = phi[charged & (abs_eta < .8) & (.2 < pT) & (pT < 5.)]
+            results['flow']['N'] = phi_alice.size
+            results['flow']['Qn'] = [
+               np.exp(1j*n*phi_alice).sum()
+               for n in range(1, results.dtype['flow']['Qn'].shape[0] + 1)
+            ]
 
     nfail = 0
 
@@ -604,7 +621,8 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
             logging.warning('continuing to next event')
             continue
 
-        #results_file.write(results.tobytes())
+        if args.centDet:
+            results_file.write(results.tobytes())
         logging.info('event %d completed successfully', n)
 
     # end of events: if running with a checkpoint, delete the file unless this
@@ -688,33 +706,62 @@ def main():
     def h5py_file():
         yield h5py.File(args.particles, 'w') if args.particles else None
 
-            #open(args.results, filemode + 'b',
-            #     buffering=args.buffering) as results_file, \
-    with \
-            h5py_file() as particles_file, \
-            tempfile.TemporaryDirectory(
-                prefix='hic-', dir=args.tmpdir) as workdir:
-        os.chdir(workdir)
-        logging.info('working directory: %s', workdir)
+    if args.centDet:
+        with \
+                open(args.results, filemode + 'b',
+                    buffering=args.buffering) as results_file, \
+                h5py_file() as particles_file, \
+                tempfile.TemporaryDirectory(
+                    prefix='hic-', dir=args.tmpdir) as workdir:
+            os.chdir(workdir)
+            logging.info('working directory: %s', workdir)
+            logging.info("Running centrality determination")
 
-        try:
-            status = run_events(args, None, particles_file, checkpoint_ic)
-        except KeyboardInterrupt:
-            # after catching the initial SIGTERM or interrupt, ignore them
-            # during shutdown -- this ensures everything will exit gracefully
-            # in case of additional signals (short of SIGKILL)
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            signal.signal(signal.SIGINT, signal.SIG_IGN)
-            status = True
-            logging.info(
-                'interrupt or signal at %s, cleaning up...',
-                datetime.datetime.now()
-            )
-            if args.checkpoint is not None:
+            try:
+                status = run_events(args, results_file, particles_file, checkpoint_ic)
+            except KeyboardInterrupt:
+                # after catching the initial SIGTERM or interrupt, ignore them
+                # during shutdown -- this ensures everything will exit gracefully
+                # in case of additional signals (short of SIGKILL)
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
+                status = True
                 logging.info(
-                    'current event saved in checkpoint file %s',
-                    args.checkpoint
+                    'interrupt or signal at %s, cleaning up...',
+                    datetime.datetime.now()
                 )
+                if args.checkpoint is not None:
+                    logging.info(
+                        'current event saved in checkpoint file %s',
+                        args.checkpoint
+                    )
+    else:
+        with \
+                h5py_file() as particles_file, \
+                tempfile.TemporaryDirectory(
+                    prefix='hic-', dir=args.tmpdir) as workdir:
+            os.chdir(workdir)
+            logging.info('working directory: %s', workdir)
+            logging.info("Running production")
+
+            try:
+                status = run_events(args, None, particles_file, checkpoint_ic)
+            except KeyboardInterrupt:
+                # after catching the initial SIGTERM or interrupt, ignore them
+                # during shutdown -- this ensures everything will exit gracefully
+                # in case of additional signals (short of SIGKILL)
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
+                status = True
+                logging.info(
+                    'interrupt or signal at %s, cleaning up...',
+                    datetime.datetime.now()
+                )
+                if args.checkpoint is not None:
+                    logging.info(
+                        'current event saved in checkpoint file %s',
+                        args.checkpoint
+                    )
 
     end = datetime.datetime.now()
     logging.info('finished at %s, %s elapsed', end, end - start)

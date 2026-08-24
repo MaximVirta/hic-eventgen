@@ -186,8 +186,20 @@ parser.add_argument(
     help='log level (default: %(default)s)'
 )
 parser.add_argument(
+    '--lattice-size', type=float, default=.1, metavar='FLOAT',
+    help='Grid spacing for Trento and hydro [fm] (default: %(default)s fm)'
+)
+parser.add_argument(
     '--nucleon-width', type=float, default=.5, metavar='FLOAT',
     help='trento nucleon width [fm] (default: %(default)s fm)'
+)
+parser.add_argument(
+    '--constit-width-min', type=float, default=.1, metavar='FLOAT',
+    help='minimum trento consituent width [fm] (default: %(default)s fm)'
+)
+parser.add_argument(
+    '--chi-struct', type=float, default=1.0, metavar='FLOAT',
+    help='trento subnucleon width dependence [0., 1.0] (default: %(default)s fm)'
 )
 parser.add_argument(
     '--trento-args', default='Pb Pb', metavar='ARGS',
@@ -223,7 +235,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
 
     """
     # set the grid step size proportionally to the nucleon width
-    grid_step = 0.07;
+    grid_step = args.lattice_size;
     # the "target" grid max: the grid shall be at least as large as the target
     grid_max_target = 15
     #grid_max_target = 16
@@ -265,6 +277,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
         except FileNotFoundError:
             pass
 
+        constit_width = args.constit_width_min + args.chi_struct*(args.nucleon_width - args.constit_width_min)
         run_cmd(
             'trento',
             '--number-events {}'.format(nevents),
@@ -272,6 +285,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
             '--grid-step {} --grid-max {}'.format(grid_step, grid_max_target),
             '--output', initial_file,
             '--nucleon-width {}'.format(args.nucleon_width),
+            '--constit-width {}'.format(constit_width),
             args.trento_args
         )
 
@@ -431,6 +445,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
            ('initial_entropy', float_t),
            ('nsamples', int_t),
            ('dNch_deta', float_t),
+           ('dNch_deta_forward', float_t),
            ('dET_deta', float_t),
            ('dN_dy', [(s, float_t) for (s, _) in species]),
            ('mean_pT', [(s, float_t) for (s, _) in species]),
@@ -482,7 +497,7 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
         surface = frzout.Surface(**run_hydro(fs, event_size=rmax), ymax=2)
         logging.info('%d freeze-out cells', len(surface))
 
-        minsamples, maxsamples = 10, 1000  # reasonable range for nsamples
+        minsamples, maxsamples = 50, 1000  # reasonable range for nsamples
         #minsamples, maxsamples = 10, 1000  # reasonable range for nsamples
         #minparts = 10**5  # min number of particles to sample
         nparts = 0  # for tracking total number of sampled particles
@@ -569,6 +584,8 @@ def run_events(args, results_file, particles_file=None, checkpoint_ic=None):
 
             results['dNch_deta'] = \
                np.count_nonzero(charged & (abs_eta < .5)) / nsamples
+            results['dNch_deta_forward'] = \
+               np.count_nonzero(charged & (abs_eta > 1.) & (abs_eta < 2.)) / nsamples
 
             ET_eta = .6
             results['dET_deta'] = \
